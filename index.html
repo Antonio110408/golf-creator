@@ -48,6 +48,7 @@ table{width:100%;border-collapse:collapse}td,th{padding:3px 6px;text-align:left;
   <p class="note">Los rankings se guardan en este navegador. Para uno mundial hará falta un servidor.</p></div></div>
 </section></main>
 <div id="ov" hidden><div><h2 id="ot"></h2><p id="od"></p><div class="row" style="justify-content:center"><button id="oR" class="go">Reintentar</button><button id="oL">Ver niveles</button></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 const FH=1,T=24,$=s=>document.querySelector(s);let W=32,H=20;
 const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
@@ -139,15 +140,25 @@ addEventListener('keydown',e=>{if($('#ed').hidden||/INPUT|SELECT/.test(e.target.
 $('#bT').onclick=()=>{const L=cur();okL(L)?play(L,true):alert('La salida y el hoyo deben estar sobre suelo firme y en casillas distintas.')};
 $('#bS').onclick=()=>{const L=cur();if(!okL(L))return alert('La salida y el hoyo deben estar sobre suelo firme y en casillas distintas.');const e=add(L,1);pub(e.id,L);alert('Guardado. Código del nivel: '+e.id)};
 $('#bSh').onclick=()=>{const L=cur();if(!okL(L))return alert('La salida y el hoyo deben estar sobre suelo firme y en casillas distintas.');const e=add(L,1);pub(e.id,L);navigator.clipboard&&navigator.clipboard.writeText(e.id).catch(()=>{});alert('Código del nivel (copiado): '+e.id+'\nTus amigos lo escriben en Niveles → Unirse por código.'+(DB?'':'\nAviso: aquí no hay conexión compartida; abre la página publicada y con sesión iniciada.'))};
-let DB=null;try{window.claude&&claude.use('db').then(d=>{DB=d}).catch(()=>{})}catch(e){}
-const pub=(id,L)=>{try{DB&&DB.doc('levels/'+id).set({e:enc(L),n:L.n||'',a:L.a||'',ts:Date.now()}).catch(()=>{})}catch(e){}};
-async function join(code){code=code.trim().toUpperCase();if(!code)return;let n=lib.find(x=>x.id===code);if(!n&&DB){try{const s=await DB.doc('levels/'+code).get();if(s.exists){const L=dec(s.data().e);n=add(L,0)}}catch(e){}}if(n)play(n.L,false);else alert('No hay ningún nivel con el código '+code+(DB?'':'. Aquí solo se ven los niveles de este navegador.'))}
+/* ---------- Supabase ---------- */
+const SUPABASE_URL='https://snhtplmomyinylepfkzd.supabase.co',SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuaHRwbG1vbXlpbnlsZXBma3pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5NzcyMDYsImV4cCI6MjEwNzU1MzIwNn0.9LsUrpgZamOCEjbAMNY540xZEGWR9VJjcZC6Z5B96JM';
+let DB=null;try{if(window.supabase&&!/^PEGA/.test(SUPABASE_URL))DB=supabase.createClient(SUPABASE_URL,SUPABASE_KEY)}catch(e){}
+const skey=r=>r.n+'|'+r.s+'|'+r.t;
+function mergeSc(id,rows){const m=new Map();[...(sc[id]||[]),...rows].forEach(r=>m.set(skey(r),r));sc[id]=[...m.values()]}
+async function loadScores(id){if(!DB)return;try{const{data}=await DB.from('scores').select('player,strokes,secs,created_at').eq('level_id',id).order('strokes').order('secs').limit(100);if(!data)return;mergeSc(id,data.map(r=>({n:r.player,s:r.strokes,t:+r.secs,ts:Date.parse(r.created_at)||0})));sv('gc_sc',sc);if(G&&G.id===id)ranking()}catch(e){}}
+async function syncLevels(){if(!DB)return;try{const{data}=await DB.from('levels').select('id,data,plays,created_at').order('created_at',{ascending:false}).limit(200);if(!data)return;const ids=new Set(data.map(r=>r.id));
+ for(const r of data){let e=lib.find(x=>x.id===r.id);if(!e){try{const L=dec(r.data),i2=lid(L);e=lib.find(x=>x.id===i2);if(!e){e={id:i2,L,plays:0,mine:0,ts:Date.parse(r.created_at)||Date.now()};lib.push(e)}}catch(_){continue}}if((r.plays||0)>e.plays)e.plays=r.plays}
+ for(const e of lib.slice())if(e.mine&&!ids.has(e.id))pub(e.id,e.L);
+ const{data:b}=await DB.from('best_scores').select('level_id,player,strokes,secs').limit(1000);(b||[]).forEach(r=>mergeSc(r.level_id,[{n:r.player,s:r.strokes,t:+r.secs,ts:0}]));
+ sv('gc_lib',lib);sv('gc_sc',sc);if(!$('#lib').hidden)list()}catch(e){}}
+const pub=async(id,L)=>{if(!DB)return;try{const{error}=await DB.from('levels').insert({id,data:enc(L),name:(L.n||'').slice(0,60),author:(L.a||'').slice(0,40)});if(error&&error.code!=='23505')console.warn('Supabase:',error.message)}catch(e){}};
+async function join(code){code=code.trim().toUpperCase();if(!code)return;let n=lib.find(x=>x.id===code);if(!n&&DB){try{const{data}=await DB.from('levels').select('data').eq('id',code).maybeSingle();if(data){n=add(dec(data.data),0)}}catch(e){}}if(n)play(n.L,false);else alert('No hay ningún nivel con el código '+code+(DB?'':'. Aquí solo se ven los niveles de este navegador.'))}
 $('#bJ').onclick=()=>join($('#q').value);$('#q').onkeydown=e=>{if(e.key==='Enter')join($('#q').value)};
 function copy(u,id){(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>alert('Link copiado. ID: '+id),()=>prompt('Copia el link (ID '+id+'):',u))}
 /* ---------- física y juego ---------- */
 let G=null;const DRAG={'g':.9,s:4.5,i:.12,m:7,'>':.9,'<':.9,'^':.9,v:.9},MAXP=24;
 function play(L,test){show('play');if(!pname){pname=(prompt('¿Cómo te llamas?')||'Anónimo').slice(0,16);sv('gc_name',pname);$('#nm').value=pname}
- const id=lid(L);if(!test){const e=add(L,0);e.plays++;sv('gc_lib',lib)}
+ const id=lid(L);if(!test){const e=add(L,0);e.plays++;sv('gc_lib',lib);if(DB){DB.rpc('inc_plays',{lid:id}).then(()=>{},()=>{});loadScores(id)}}
  G={L:clone(L),test,id,k:0,t0:0,end:0,done:0,drag:null,B:{x:L.t[0]+.5,y:L.t[1]+.5,vx:0,vy:0,air:0,f:L.t[2]||0,zs:(L.t[2]||0)*FH},last:[L.t[0]+.5,L.t[1]+.5],lf:L.t[2]||0,msg:'',v3:true,fly:1,ft:0,cam:{yaw:Math.atan2(L.h[1]-L.t[1],L.h[0]-L.t[0]),dist:11}};setDim(G.L);$('#bD').textContent='Vista 2D';
  $('#pt').textContent=(test===true?'[Prueba] ':test?'[Práctica] ':'')+L.n+' · ID '+id;$('#ov').hidden=true;ranking();last=performance.now();requestAnimationFrame(loop)}
 function bounce(B,px,py,rad,e,min){let dx=B.x-px,dy=B.y-py,d=Math.hypot(dx,dy);if(d>=rad)return;if(d<1e-6){dx=-B.vx;dy=-B.vy;d=Math.hypot(dx,dy)||1}
@@ -178,7 +189,7 @@ function sub(dt){const B=G.B;if(B.jr&&!(B.air>0)){B.jr=0;const jx=Math.floor(B.x
 function confetti(){const o=$('#ov');o.querySelectorAll('.cf').forEach(n=>n.remove());for(let i=0;i<70;i++){const s=document.createElement('i');s.className='cf';s.style.cssText='left:'+Math.random()*100+'vw;background:hsl('+Math.random()*360+',85%,60%);animation-delay:'+Math.random()*.8+'s;animation-duration:'+(2+Math.random()*1.5)+'s';o.appendChild(s)}}
 function sink(){if(G.done)return;G.done=1;G.end=performance.now();G.B.vx=G.B.vy=0;G.B.x=G.L.h[0]+.5;G.B.y=G.L.h[1]+.5;
  const t=+((G.end-G.t0)/1000).toFixed(1);let d=`${G.k} tiros en ${t} s`;
- if(!G.test){(sc[G.id]=sc[G.id]||[]).push({n:pname,s:G.k,t,ts:Date.now()});sv('gc_sc',sc);ranking();const pos=sorted(G.id).findIndex(r=>r.n===pname&&r.s===G.k&&r.t===t)+1;d+=`<br>Puesto ${pos} de ${sc[G.id].length}`}
+ if(!G.test){(sc[G.id]=sc[G.id]||[]).push({n:pname,s:G.k,t,ts:Date.now()});sv('gc_sc',sc);if(DB)DB.from('scores').insert({level_id:G.id,player:pname,strokes:G.k,secs:t}).then(()=>{},()=>{});ranking();const pos=sorted(G.id).findIndex(r=>r.n===pname&&r.s===G.k&&r.t===t)+1;d+=`<br>Puesto ${pos} de ${sc[G.id].length}`}
  else d+=G.test===true?'<br>Prueba completada. Ya puedes guardarlo y compartirlo.':'<br>Práctica completada (sin puntuación).';
  $('#ot').textContent='¡EN EL HOYO!';const tp=sorted(G.id).slice(0,5),ps=G.test?0:sorted(G.id).findIndex(r=>r.n===pname&&r.s===G.k&&r.t===t)+1;$('#od').innerHTML='<div class="sts"><div class="st"><b>'+G.k+'</b><span>tiros</span></div><div class="st"><b>'+t+' s</b><span>tiempo</span></div><div class="st"><b>'+(ps?'#'+ps:'—')+'</b><span>puesto</span></div></div><div class="cd">Código del mapa <span class="id">'+G.id+'</span></div>'+(G.test?'<p class="note" style="color:#cfe">'+(G.test===true?'Prueba completada. Ya puedes guardarlo y compartirlo.':'Práctica completada (sin puntuación).')+'</p>':'<table class="tt">'+tp.map((r,i)=>'<tr class="'+(r.n===pname&&r.s===G.k&&r.t===t?'me':'')+'"><td>'+(i+1)+'</td><td>'+esc(r.n)+'</td><td>'+r.s+'</td><td>'+r.t+'s</td></tr>').join('')+'</table>');confetti();$('#ov').hidden=false}
 let last=0;
@@ -326,9 +337,9 @@ $('#list').onclick=e=>{const a=e.target.dataset.a,id=e.target.dataset.i;if(!a)re
  if(a==='del'){lib=lib.filter(x=>x.id!==id);sv('gc_lib',lib);list()}};
 /* ---------- navegación ---------- */
 function show(v){for(const s of['ed','lib','cus','play'])$('#'+s).hidden=s!==v;document.querySelectorAll('header button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
- if(v==='lib')list();if(v==='cus')cusLoop();if(v==='ed')ui();if(v!=='play')G=null}
+ if(v==='lib'){list();syncLevels()}if(v==='cus')cusLoop();if(v==='ed')ui();if(v!=='play')G=null}
 document.querySelectorAll('header button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 $('#nm').value=pname;$('#nm').onchange=e=>{pname=e.target.value.trim().slice(0,16);sv('gc_name',pname)};
 function fromHash(){if(location.hash.startsWith('#L=')){try{play(dec(location.hash.slice(3)),false)}catch(e){alert('El link del nivel no es válido.')}}}
-addEventListener('hashchange',fromHash);seed();show('ed');fromHash();
+addEventListener('hashchange',fromHash);seed();show('ed');fromHash();syncLevels();
 </script></body></html>
